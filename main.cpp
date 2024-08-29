@@ -20,6 +20,7 @@ struct Coord {
 vector<Coord> coordinates;
 bool captureCoords = false;
 bool repeat = false;
+bool isRunning = true;
 int clickDelay = 2500;
 HWND hwndList;
 
@@ -46,21 +47,20 @@ void LoadCoordinatesFromFile(const std::wstring& filename) {
 }
 
 void ShowSpeedDialog(HWND hwnd) {
-    // Cria uma caixa de diálogo para configurar a velocidade
     INT_PTR result;
     result = DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_SPEED_DIALOG), hwnd, [](HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) -> INT_PTR {
         static HWND speedSlider;
         switch (message) {
         case WM_INITDIALOG:
             speedSlider = GetDlgItem(hDlg, IDC_SPEED_SLIDER);
-            SendMessage(speedSlider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 10));
+            SendMessage(speedSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 10)); // Ajusta o intervalo do slider
             SendMessage(speedSlider, TBM_SETPAGESIZE, 0, 1);
-            SendMessage(speedSlider, TBM_SETPOS, TRUE, (clickDelay - 500) / 500); // Ajusta a posição do slider
+            SendMessage(speedSlider, TBM_SETPOS, TRUE, (clickDelay - 1000) / 500); // Ajusta a posição inicial do slider
             return TRUE;
         case WM_COMMAND:
             if (LOWORD(wParam) == IDOK) {
                 int pos = static_cast<int>(SendMessage(speedSlider, TBM_GETPOS, 0, 0));
-                clickDelay = 5000 - pos * 500; // Ajusta o delay baseado na posição do slider
+                clickDelay = 1000 + pos * 500; // Ajusta o delay baseado na posição do slider
                 EndDialog(hDlg, IDOK);
                 return TRUE;
             }
@@ -73,6 +73,7 @@ void ShowSpeedDialog(HWND hwnd) {
         return FALSE;
         });
 }
+
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
@@ -88,19 +89,25 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 MessageBox(hwnd, L"Você precisa adicionar as coordenadas primeiro.", L"Erro", MB_OK | MB_ICONERROR);
             }
             else {
+                isRunning = true; // Iniciar o loop
                 do {
                     for (const auto& coord : coordinates) {
+                        if (!isRunning) break; // Verifica se o loop deve ser interrompido
+
                         SetCursorPos(coord.x, coord.y);
                         Sleep(clickDelay);
 
                         // Clicar com o botão direito
                         mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
                         mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
+
+                        if (!isRunning) break; // Verifica novamente após o clique
                     }
-                } while (repeat);
+                } while (repeat && isRunning);
             }
             break;
         }
+
         case 3: {  // Botão "Limpar Coordenadas"
             coordinates.clear();
             SendMessage(hwndList, LB_RESETCONTENT, 0, 0);
@@ -176,7 +183,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             }
         }
         else if (wParam == VK_F4) {
-            repeat = false;
+            isRunning = false; // Para o loop de execução
         }
         break;
     }
