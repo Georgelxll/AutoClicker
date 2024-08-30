@@ -1,7 +1,6 @@
 #include <windows.h>
-#include <commdlg.h>  // Para caixas de diálogo de arquivos
-#include <commctrl.h> // Para controles comuns, incluindo sliders
-#include "resource.h"
+#include <commdlg.h>
+#include <commctrl.h>
 #include <vector>
 #include <string>
 #include <fstream>
@@ -9,7 +8,6 @@
 
 #define IDD_SPEED_DIALOG 101
 #define IDC_SPEED_SLIDER 1001
-
 
 using namespace std;
 
@@ -20,9 +18,10 @@ struct Coord {
 vector<Coord> coordinates;
 bool captureCoords = false;
 bool repeat = false;
-bool isRunning = true;
-int clickDelay = 1250;
+bool isRunning = false;
+int clickDelay = 2000;
 HWND hwndList;
+HANDLE hThread = NULL;  // Handle da thread
 
 void SaveCoordinatesToFile(const std::wstring& filename) {
     ofstream outFile(filename.c_str());
@@ -44,6 +43,40 @@ void LoadCoordinatesFromFile(const std::wstring& filename) {
             SendMessage(hwndList, LB_ADDSTRING, 0, (LPARAM)coordText.str().c_str());
         }
     }
+}
+
+DWORD WINAPI RepeatLoop(LPVOID lpParam) {
+    do {
+        for (const auto& coord : coordinates) {
+            if (!isRunning) {
+                return 0;  // Finaliza a thread
+            }
+
+            SetCursorPos(coord.x, coord.y);
+            Sleep(clickDelay);
+
+            // Clicar com o botão direito
+            mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
+            mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
+        }
+    } while (repeat && isRunning);
+
+    MessageBox(NULL, L"Finalizado.", L"Informação", MB_OK | MB_ICONINFORMATION);
+    return 0;
+}
+
+void StartLoop() {
+    if (coordinates.empty()) {
+        MessageBox(NULL, L"Você precisa adicionar as coordenadas primeiro.", L"Erro", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    if (hThread != NULL) {
+        CloseHandle(hThread);
+    }
+
+    isRunning = true;
+    hThread = CreateThread(NULL, 0, RepeatLoop, NULL, 0, NULL);
 }
 
 void ShowSpeedDialog(HWND hwnd) {
@@ -74,56 +107,31 @@ void ShowSpeedDialog(HWND hwnd) {
         });
 }
 
-
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
     case WM_COMMAND: {
         switch (LOWORD(wParam)) {
-        case 1: {  // Botão "Coordenadas"
+        case 1:  // Botão "Coordenadas"
             captureCoords = true;
             MessageBox(hwnd, L"Aperte F5 para capturar a posição do mouse.", L"Informação", MB_OK | MB_ICONINFORMATION);
             break;
-        }
-        case 2: {  // Botão "Iniciar"
-            if (coordinates.empty()) {
-                MessageBox(hwnd, L"Você precisa adicionar as coordenadas primeiro.", L"Erro", MB_OK | MB_ICONERROR);
-            }
-            else {
-                isRunning = true; // Iniciar o loop
-                do {
-                    for (const auto& coord : coordinates) {
-                        if (!isRunning) break; // Verifica se o loop deve ser interrompido
-
-                        SetCursorPos(coord.x, coord.y);
-                        Sleep(clickDelay);
-
-                        // Clicar com o botão direito
-                        mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
-                        mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
-
-                        if (!isRunning) break; // Verifica novamente após o clique
-                    }
-                } while (repeat && isRunning);
-            }
+        case 2:  // Botão "Iniciar"
+            StartLoop();
             break;
-        }
-
-        case 3: {  // Botão "Limpar Coordenadas"
+        case 3:  // Botão "Limpar Coordenadas"
             coordinates.clear();
             SendMessage(hwndList, LB_RESETCONTENT, 0, 0);
             MessageBox(hwnd, L"Coordenadas limpas.", L"Informação", MB_OK | MB_ICONINFORMATION);
             break;
-        }
-        case 4: {  // Configurações -> Repetir
+        case 4:  // Configurações -> Repetir
             repeat = !repeat;
             MessageBox(hwnd, repeat ? L"Repetição ativada." : L"Repetição desativada.", L"Configuração", MB_OK | MB_ICONINFORMATION);
             break;
-        }
-        case 5: {  // Configurações -> Velocidade
+        case 5:  // Configurações -> Velocidade
             ShowSpeedDialog(hwnd);
             break;
-        }
-        case 6: {  // Configurações -> Exportar
+        case 6:  // Configurações -> Exportar
+        {
             OPENFILENAME ofn;
             WCHAR szFile[260] = L"coordenadas.txt";
 
@@ -131,7 +139,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             ofn.lStructSize = sizeof(ofn);
             ofn.hwndOwner = hwnd;
             ofn.lpstrFile = szFile;
-            ofn.nMaxFile = sizeof(szFile);
+            ofn.nMaxFile = sizeof(szFile) / sizeof(szFile[0]);
             ofn.lpstrFilter = L"Text Files\0*.TXT\0";
             ofn.nFilterIndex = 1;
             ofn.lpstrFileTitle = NULL;
@@ -145,7 +153,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             }
             break;
         }
-        case 7: {  // Configurações -> Importar
+        case 7:  // Configurações -> Importar
+        {
             OPENFILENAME ofn;
             WCHAR szFile[260] = L"coordenadas.txt";
 
@@ -153,7 +162,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             ofn.lStructSize = sizeof(ofn);
             ofn.hwndOwner = hwnd;
             ofn.lpstrFile = szFile;
-            ofn.nMaxFile = sizeof(szFile);
+            ofn.nMaxFile = sizeof(szFile) / sizeof(szFile[0]);
             ofn.lpstrFilter = L"Text Files\0*.TXT\0";
             ofn.nFilterIndex = 1;
             ofn.lpstrFileTitle = NULL;
@@ -183,7 +192,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             }
         }
         else if (wParam == VK_F4) {
-            isRunning = false; // Para o loop de execução
+            isRunning = false;  // Para o loop de execução
+            if (hThread != NULL) {
+                WaitForSingleObject(hThread, INFINITE);
+                CloseHandle(hThread);
+                hThread = NULL;
+            }
         }
         break;
     }
@@ -200,6 +214,19 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         AppendMenu(hMenu, MF_STRING | MF_POPUP, (UINT_PTR)hSubMenu, L"Configurações");
         SetMenu(hwnd, hMenu);
 
+        CreateWindow(L"BUTTON", L"Coordenadas",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 40, 50, 150, 30, hwnd, (HMENU)1,
+            GetModuleHandle(NULL), NULL);
+        CreateWindow(L"BUTTON", L"Iniciar",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 280, 50, 150, 30, hwnd, (HMENU)2,
+            GetModuleHandle(NULL), NULL);
+        CreateWindow(L"BUTTON", L"Limpar Coordenadas",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 60, 100, 350, 30, hwnd, (HMENU)3,
+            GetModuleHandle(NULL), NULL);
+
+        // Cria a lista de coordenadas
+        hwndList = CreateWindowEx(0, WC_LISTBOX, NULL, WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_BORDER | LBS_NOTIFY,
+            10, 150, 460, 300, hwnd, NULL, GetModuleHandle(NULL), NULL);
         break;
     }
     case WM_DESTROY:
@@ -211,56 +238,43 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
     return 0;
 }
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmdLine, int nCmdShow) {
     INITCOMMONCONTROLSEX icex;
-    icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
-    icex.dwICC = ICC_BAR_CLASSES; // Para barras de progresso, sliders, etc.
+    icex.dwSize = sizeof(icex);
+    icex.dwICC = ICC_LISTVIEW_CLASSES;
     InitCommonControlsEx(&icex);
 
-    const wchar_t CLASS_NAME[] = L"MouseMoverWindowClass";
+    WNDCLASSEX wcex;
+    HWND hwnd;
+    MSG msg;
 
-    WNDCLASS wc = {};
-    wc.lpfnWndProc = WindowProc;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = CLASS_NAME;
+    wcex.cbSize = sizeof(WNDCLASSEX);
+    wcex.style = CS_HREDRAW | CS_VREDRAW;
+    wcex.lpfnWndProc = WindowProc;
+    wcex.cbClsExtra = 0;
+    wcex.cbWndExtra = 0;
+    wcex.hInstance = hInstance;
+    wcex.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+    wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcex.lpszMenuName = NULL;
+    wcex.lpszClassName = L"MainWndClass";
+    wcex.hIconSm = LoadIcon(NULL, IDI_APPLICATION);
 
-    RegisterClass(&wc);
+    RegisterClassEx(&wcex);
 
-    HWND hwnd = CreateWindowEx(
-        0,
-        CLASS_NAME,
-        L"Mouse Mover",
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 380, 420,
-        NULL,
-        NULL,
-        hInstance,
-        NULL
-    );
-
-    if (hwnd == NULL) {
-        return 0;
+    hwnd = CreateWindow(L"MainWndClass", L"Automatizador de Clique", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 500, 550, NULL, NULL, hInstance, NULL);
+    if (!hwnd) {
+        return FALSE;
     }
 
     ShowWindow(hwnd, nCmdShow);
+    UpdateWindow(hwnd);
 
-    CreateWindow(L"BUTTON", L"Coordenadas", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
-        50, 50, 120, 30, hwnd, (HMENU)1, hInstance, NULL);
-
-    CreateWindow(L"BUTTON", L"Iniciar", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
-        200, 50, 120, 30, hwnd, (HMENU)2, hInstance, NULL);
-
-    CreateWindow(L"BUTTON", L"Limpar Coordenadas", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
-        50, 100, 270, 30, hwnd, (HMENU)3, hInstance, NULL);
-
-    hwndList = CreateWindow(L"LISTBOX", NULL, WS_VISIBLE | WS_CHILD | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
-        50, 150, 270, 200, hwnd, NULL, hInstance, NULL);
-
-    MSG msg;
     while (GetMessage(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
 
-    return 0;
+    return (int)msg.wParam;
 }
