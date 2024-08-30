@@ -5,9 +5,15 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+#include <iostream>
+#include <limits>  // Para std::numeric_limits
 
 #define IDD_SPEED_DIALOG 101
 #define IDC_SPEED_SLIDER 1001
+#define IDD_REPEAT_DIALOG 102
+#define IDC_REPEAT_EDIT 1002
+#define IDC_REPEAT_OK 1003
+#define IDC_REPEAT_CANCEL 1004
 
 using namespace std;
 
@@ -18,6 +24,7 @@ struct Coord {
 vector<Coord> coordinates;
 bool captureCoords = false;
 bool repeat = false;
+int repeatCount = 1; // Quantidade de repetição padrão
 bool isRunning = false;
 int clickDelay = 2000;
 HWND hwndList;
@@ -46,9 +53,11 @@ void LoadCoordinatesFromFile(const std::wstring& filename) {
 }
 
 DWORD WINAPI RepeatLoop(LPVOID lpParam) {
+    int count = repeatCount; // Usa a quantidade de repetições definida
+
     do {
         for (const auto& coord : coordinates) {
-            if (!isRunning) {
+            if (!isRunning || count <= 0) {
                 return 0;  // Finaliza a thread
             }
 
@@ -59,11 +68,13 @@ DWORD WINAPI RepeatLoop(LPVOID lpParam) {
             mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0);
             mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0);
         }
-    } while (repeat && isRunning);
+        count--; // Decrementa o contador de repetições
+    } while (count > 0 && isRunning); // Continua enquanto houver repetições e isRunning for verdadeiro
 
     MessageBox(NULL, L"Finalizado.", L"Informação", MB_OK | MB_ICONINFORMATION);
     return 0;
 }
+
 
 void StartLoop() {
     if (coordinates.empty()) {
@@ -78,6 +89,7 @@ void StartLoop() {
     isRunning = true;
     hThread = CreateThread(NULL, 0, RepeatLoop, NULL, 0, NULL);
 }
+
 
 void ShowSpeedDialog(HWND hwnd) {
     INT_PTR result;
@@ -107,6 +119,45 @@ void ShowSpeedDialog(HWND hwnd) {
         });
 }
 
+INT_PTR CALLBACK RepeatDialogProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+    case WM_INITDIALOG:
+    {
+        WCHAR buffer[4];
+        swprintf_s(buffer, L"%d", repeatCount);
+        SetDlgItemText(hDlg, IDC_REPEAT_EDIT, buffer);
+        return TRUE;
+    }
+    case WM_COMMAND:
+        switch (LOWORD(wParam)) {
+        case IDC_REPEAT_OK:
+        {
+            WCHAR buffer[4];
+            GetDlgItemText(hDlg, IDC_REPEAT_EDIT, buffer, 4);
+            int value = _wtoi(buffer);
+            if (value >= 1 && value <= 999) {
+                repeatCount = value;
+                repeat = true;  // Ativa a repetição
+                EndDialog(hDlg, IDOK);
+            }
+            else {
+                MessageBox(hDlg, L"Por favor, insira um número entre 1 e 999.", L"Erro", MB_OK | MB_ICONERROR);
+            }
+        }
+        return TRUE;
+        case IDC_REPEAT_CANCEL:
+            repeat = false;  // Desativa a repetição se o usuário cancelar
+            EndDialog(hDlg, IDCANCEL);
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
+
+
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
     case WM_COMMAND: {
@@ -124,8 +175,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             MessageBox(hwnd, L"Coordenadas limpas.", L"Informação", MB_OK | MB_ICONINFORMATION);
             break;
         case 4:  // Configurações -> Repetir
-            repeat = !repeat;
-            MessageBox(hwnd, repeat ? L"Repetição ativada." : L"Repetição desativada.", L"Configuração", MB_OK | MB_ICONINFORMATION);
+            {
+                // Exibe a caixa de diálogo para configurar o número de repetições
+                if (DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_REPEAT_DIALOG), hwnd, RepeatDialogProc) == IDOK) {
+                    MessageBox(hwnd, repeat ? L"Repetição ativada." : L"Repetição desativada.", L"Configuração", MB_OK | MB_ICONINFORMATION);
+                }
+            }
             break;
         case 5:  // Configurações -> Velocidade
             ShowSpeedDialog(hwnd);
