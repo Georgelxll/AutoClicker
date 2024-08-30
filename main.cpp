@@ -21,7 +21,7 @@ vector<Coord> coordinates;
 bool captureCoords = false;
 bool repeat = false;
 bool isRunning = true;
-int clickDelay = 2500;
+int clickDelay = 1250;
 HWND hwndList;
 
 void SaveCoordinatesToFile(const std::wstring& filename) {
@@ -55,12 +55,12 @@ void ShowSpeedDialog(HWND hwnd) {
             speedSlider = GetDlgItem(hDlg, IDC_SPEED_SLIDER);
             SendMessage(speedSlider, TBM_SETRANGE, TRUE, MAKELPARAM(1, 10)); // Ajusta o intervalo do slider
             SendMessage(speedSlider, TBM_SETPAGESIZE, 0, 1);
-            SendMessage(speedSlider, TBM_SETPOS, TRUE, (clickDelay - 1000) / 500); // Ajusta a posição inicial do slider
+            SendMessage(speedSlider, TBM_SETPOS, TRUE, (clickDelay - 500) / 250); // Ajusta a posição inicial do slider
             return TRUE;
         case WM_COMMAND:
             if (LOWORD(wParam) == IDOK) {
                 int pos = static_cast<int>(SendMessage(speedSlider, TBM_GETPOS, 0, 0));
-                clickDelay = 1000 + pos * 500; // Ajusta o delay baseado na posição do slider
+                clickDelay = 500 + pos * 250; // Ajusta o delay baseado na posição do slider
                 EndDialog(hDlg, IDOK);
                 return TRUE;
             }
@@ -231,7 +231,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         CLASS_NAME,
         L"Mouse Mover",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 400, 400,
+        CW_USEDEFAULT, CW_USEDEFAULT, 380, 420,
         NULL,
         NULL,
         hInstance,
@@ -251,10 +251,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         200, 50, 120, 30, hwnd, (HMENU)2, hInstance, NULL);
 
     CreateWindow(L"BUTTON", L"Limpar Coordenadas", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
-        50, 100, 120, 30, hwnd, (HMENU)3, hInstance, NULL);
+        50, 100, 270, 30, hwnd, (HMENU)3, hInstance, NULL);
 
     hwndList = CreateWindow(L"LISTBOX", NULL, WS_VISIBLE | WS_CHILD | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
-        50, 150, 300, 200, hwnd, NULL, hInstance, NULL);
+        50, 150, 270, 200, hwnd, NULL, hInstance, NULL);
 
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0)) {
